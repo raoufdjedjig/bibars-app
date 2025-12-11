@@ -24,12 +24,19 @@ Utilisez le menu à gauche pour naviguer :
 # Petit test de connexion pour rassurer
 try:
     from supabase import create_client
-    # REMETS TES CLES ICI UNE DERNIERE FOIS
-SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
-
+    
+    # ---------------------------------------------------------
+    # COLLE TA CLÉ JUSTE EN DESSOUS ENTRE LES GUILLEMETS
+    # ---------------------------------------------------------
+    SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co" 
+    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
+    
+    # Création de la connexion
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    
+    # Si on arrive ici sans erreur, c'est gagné
     st.success("✅ Connexion Base de Données : OK")
-except:
 
-    st.error("❌ Erreur de connexion (Vérifiez les clés dans Home.py)")
+except Exception as e:
+    # C'est ce bloc qui manquait !
+    st.error(f"❌ Erreur de connexion : {e}")

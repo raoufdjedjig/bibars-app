@@ -8,11 +8,6 @@ from supabase import create_client
 
 # ... après les imports ...
 
-# --- VIGILE SÉCURITÉ ---
-if 'user' not in st.session_state or st.session_state.user is None:
-    st.warning("⛔ Vous devez vous connecter sur la page d'accueil d'abord.")
-    st.stop() # Arrête le chargement de la page ici
-# -----------------------
 
 # --- TES CLÉS (A REMPLIR) ---
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
@@ -221,4 +216,5 @@ while True:
         st.error(f"Erreur : {e}")
     
     time.sleep(5)
+
 

@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-import streamlit.components.v1 as components
+import streamlit.components.v1 as components 
 from supabase import create_client
 
 # --- CONFIGURATION (Mets tes clés ici) ---
@@ -140,5 +140,56 @@ else:
                 # On compte combien on en a déjà fait
                 deja_fait_resp = supabase.table('scans').select('id')\
                     .eq('commande_id', cmd['commande_id'])\
-                    .eq('produit_id', produit['id']).
+                    .eq('produit_id', produit['id']).execute()
+                
+                nb_deja_fait = len(deja_fait_resp.data)
+                
+                # TEST DE SURPRODUCTION
+                if nb_deja_fait >= objectif_cartons:
+                    st.markdown(f'''
+                        <div class="big-error">
+                            ⛔ STOP ! COMMANDE TERMINÉE<br>
+                            Vous avez déjà scanné {nb_deja_fait}/{objectif_cartons} cartons.<br>
+                            Impossible d'ajouter plus.
+                        </div>
+                    ''', unsafe_allow_html=True)
+                    st.audio("https://upload.wikimedia.org/wikipedia/commons/5/52/Simulated_Error_Sound_Effects_Short_Buzzer_01.ogg", autoplay=True)
+                
+                else:
+                    # 3. Check Palette (Mélange)
+                    if produit['type_emballage'] != pal['type_emballage']:
+                        st.markdown(f'''
+                            <div class="big-error">
+                                ⛔ MÉLANGE INTERDIT !<br>
+                                Palette : {pal['type_emballage']}<br>
+                                Produit : {produit['type_emballage']}
+                            </div>
+                        ''', unsafe_allow_html=True)
+                    
+                    else:
+                        # 4. Succès -> Enregistrement
+                        new_scan = {
+                            "commande_id": cmd['commande_id'],
+                            "produit_id": produit['id'],
+                            "palette_id": pal['id'],
+                            "poids_enregistre": produit['poids_fixe_carton']
+                        }
+                        try:
+                            supabase.table("scans").insert(new_scan).execute()
+                            # On affiche le progrès (ex: 5/10)
+                            st.markdown(f'''
+                                <div class="big-success">
+                                    ✅ AJOUTÉ (N°{nb_deja_fait + 1}/{objectif_cartons})<br>
+                                    {produit['designation']}
+                                </div>
+                            ''', unsafe_allow_html=True)
+                        except Exception as e: st.error(f"Erreur : {e}")
 
+    # Info Palette
+    st.caption(f"Contenu actuel de la Palette {pal['numero']} :")
+    scans_pal = supabase.table('scans').select("poids_enregistre").eq('palette_id', pal['id']).execute()
+    total_pal = sum([s['poids_enregistre'] for s in scans_pal.data]) if scans_pal.data else 0
+    st.progress(min(total_pal/500, 1.0))
+    st.write(f"**Poids Palette : {total_pal} kg**")
+
+    components.html("""<script>var input = window.parent.document.querySelector("input[type=text]"); input.focus();</script>""", height=0)

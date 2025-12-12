@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import math
@@ -5,12 +6,23 @@ import time
 from datetime import datetime
 from fpdf import FPDF
 from supabase import create_client
-# ... autres imports ...
 
+# --- 1. SÉCURITÉ (VIGILE) ---
+if 'user' not in st.session_state or st.session_state.user is None:
+    st.warning("⛔ Accès refusé. Veuillez vous connecter d'abord.")
+    st.stop()
 
-# --- TES CLÉS ---
+if st.session_state.role != "admin":
+    st.error("⛔ Accès réservé aux administrateurs.")
+    st.stop()
+
+# --- 2. CONFIGURATION ---
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
+
+import streamlit as st
+import pandas as pd
+import math
 
 @st.cache_resource
 def init_connection():
@@ -23,6 +35,7 @@ st.set_page_config(page_title="ADMINISTRATION", page_icon="⚙️", layout="wide
 if 'panier_production' not in st.session_state:
     st.session_state.panier_production = []
 
+# Fonction PDF
 def create_pdf(date_prevue, panier):
     pdf = FPDF()
     pdf.add_page()
@@ -52,7 +65,8 @@ def create_pdf(date_prevue, panier):
 
 st.title("⚙️ GESTION & PLANIFICATION WMS")
 
-tab1, tab2, tab3, tab4 = st.tabs(["👥 CLIENTS", "📅 PLANIFICATION", "📜 HISTORIQUE", "📦 PRODUITS"])
+# LES 5 ONGLETS
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 CLIENTS", "📅 PLANIFICATION", "📜 HISTORIQUE", "📦 PRODUITS", "🔑 UTILISATEURS"])
 
 # ==============================================================================
 # TAB 1 : CLIENTS
@@ -64,8 +78,12 @@ with tab1:
             nom_cli = st.text_input("Nouveau Client").upper()
             if st.form_submit_button("Ajouter"):
                 if nom_cli:
-                    supabase.table('clients').insert({"nom": nom_cli}).execute()
-                    st.rerun()
+                    try:
+                        supabase.table('clients').insert({"nom": nom_cli}).execute()
+                        st.success("Ajouté !")
+                        time.sleep(1)
+                        st.rerun()
+                    except: st.error("Erreur ajout.")
     with c2:
         clients = supabase.table('clients').select("*").order('nom').execute().data
         if clients:
@@ -76,10 +94,10 @@ with tab1:
                     try:
                         supabase.table('clients').delete().eq('id', c['id']).execute()
                         st.rerun()
-                    except: st.error("Impossible (Utilisé).")
+                    except: st.error("Impossible (Déjà utilisé).")
 
 # ==============================================================================
-# TAB 2 : PLANIFICATION
+# TAB 2 : PLANIFICATION (AVEC CALCUL PALETTES)
 # ==============================================================================
 with tab2:
     st.sidebar.header("Planning")
@@ -135,9 +153,16 @@ with tab2:
                         del st.session_state.panier_production[i]
                         st.rerun()
             
-            if st.button("🚀 VALIDER & GÉNÉRER PALETTES", type="primary"):
+            # PDF
+            c_pdf, c_go = st.columns(2)
+            pdf_bytes = create_pdf(date_str, st.session_state.panier_production)
+            c_pdf.download_button("📄 PDF", pdf_bytes, "Ordre_Prod.pdf", "application/pdf")
+
+            # VALIDATION
+            if c_go.button("🚀 VALIDER & GÉNÉRER PALETTES", type="primary"):
                 bar = st.progress(0)
                 for idx, item in enumerate(st.session_state.panier_production):
+                    # 1. Commande
                     res = supabase.table('commandes').insert({
                         "client_id": item['client_id'], "reference_interne": item['ref_commande'],
                         "statut": "EN_COURS", "objectif_kg": float(item['poids_total']),
@@ -145,12 +170,13 @@ with tab2:
                     }).execute()
                     cid = res.data[0]['id']
                     
+                    # 2. Lignes
                     ligs = []
                     for _, r in item['produits'].iterrows():
                         ligs.append({"commande_id": cid, "produit_id": r['id'], "quantite_cible_cartons": int(r['nb_cartons'])})
                     supabase.table('ligne_commandes').insert(ligs).execute()
                     
-                    # CALCUL PALETTES
+                    # 3. Calcul Palettes (MAP=600, SV=800, VRAC=600)
                     grouped = item['produits'].groupby('type_emballage')['Objectif KG'].sum()
                     palette_counter = 1
                     palettes_data = []
@@ -158,7 +184,6 @@ with tab2:
                     for type_emb, poids_total in grouped.items():
                         if type_emb == 'SOUS_VIDE': poids_max = 800
                         elif type_emb == 'MAP': poids_max = 600
-                        elif type_emb == 'VRAC': poids_max = 600
                         else: poids_max = 600 
 
                         nb_palettes_estime = math.ceil(poids_total / poids_max)
@@ -182,8 +207,8 @@ with tab2:
 # TAB 3 : HISTORIQUE
 # ==============================================================================
 with tab3:
-    st.header("Historique")
-    filtre = st.date_input("Date", value=datetime.now(), key="h_d")
+    st.header("Historique Commandes")
+    filtre = st.date_input("Filtrer par date", value=datetime.now(), key="h_d")
     try:
         raw_cmds = supabase.table('commandes').select("*").order('created_at', desc=True).limit(20).execute().data
         if raw_cmds:
@@ -192,10 +217,10 @@ with tab3:
                     with st.expander(f"{c['reference_interne']} - {c['statut']}"):
                         k = c['id']
                         ns = st.selectbox("Statut", ["EN_COURS","PAUSE","TERMINE"], key=f"s{k}", index=["EN_COURS","PAUSE","TERMINE"].index(c['statut']))
-                        if st.button("Update", key=f"u{k}"):
+                        if st.button("Update Statut", key=f"u{k}"):
                             supabase.table('commandes').update({"statut": ns}).eq('id', k).execute()
                             st.rerun()
-                        if st.button("🗑️ Delete", key=f"d{k}"):
+                        if st.button("🗑️ Supprimer (Danger)", key=f"d{k}", type="primary"):
                             supabase.table('scans').delete().eq('commande_id', k).execute()
                             supabase.table('palettes').delete().eq('commande_id', k).execute()
                             supabase.table('ligne_commandes').delete().eq('commande_id', k).execute()
@@ -211,7 +236,7 @@ with tab4:
     c1, c2 = st.columns(2)
     
     with c1:
-        st.subheader("Ajout Manuel")
+        st.subheader("Manuel")
         with st.form("prod_form"):
             des = st.text_input("Désignation").upper()
             code = st.text_input("Code Barre")
@@ -225,20 +250,20 @@ with tab4:
                         exist = supabase.table('produits').select("id").eq('dun14_carton', code).execute()
                         if exist.data:
                             supabase.table('produits').update(data).eq('id', exist.data[0]['id']).execute()
+                            st.success("Mis à jour !")
                         else:
                             supabase.table('produits').insert(data).execute()
-                        st.success("OK")
-                        time.sleep(1)
+                            st.success("Créé !")
                         st.rerun()
                     except Exception as e: st.error(f"Erreur: {e}")
                     
     with c2:
         st.subheader("Import Excel")
-        up = st.file_uploader("Fichier Excel", type=['xlsx'])
+        up = st.file_uploader("Fichier .xlsx", type=['xlsx'])
         if up:
             try:
                 df = pd.read_excel(up)
-                if st.button("🚀 LANCER L'IMPORTATION"):
+                if st.button("🚀 LANCER L'IMPORT"):
                     bar = st.progress(0)
                     for idx, r in df.iterrows():
                         try:
@@ -264,4 +289,39 @@ with tab4:
     if all_p:
         st.dataframe(pd.DataFrame(all_p)[['designation', 'dun14_carton', 'poids_fixe_carton', 'type_emballage']], use_container_width=True)
 
+# ==============================================================================
+# TAB 5 : UTILISATEURS (DROITS)
+# ==============================================================================
+with tab5:
+    st.header("🔑 Gestion des Permissions")
+    ca, cb = st.columns([1, 2])
+    
+    with ca:
+        st.subheader("Assigner Rôle")
+        with st.form("role_form"):
+            u_email = st.text_input("Email").lower().strip()
+            u_role = st.selectbox("Rôle", ["operateur", "admin"])
+            if st.form_submit_button("Sauvegarder"):
+                if u_email:
+                    try:
+                        exist = supabase.table('user_roles').select('id').eq('email', u_email).execute()
+                        if exist.data:
+                            supabase.table('user_roles').update({'role': u_role}).eq('id', exist.data[0]['id']).execute()
+                        else:
+                            supabase.table('user_roles').insert({'email': u_email, 'role': u_role}).execute()
+                        st.success("OK")
+                        st.rerun()
+                    except Exception as e: st.error(str(e))
+
+    with cb:
+        st.subheader("Utilisateurs existants")
+        roles = supabase.table('user_roles').select('*').order('created_at').execute().data
+        if roles:
+            for u in roles:
+                c1, c2, c3 = st.columns([3, 2, 1])
+                c1.write(f"**{u['email']}**")
+                c2.write(f"Badge : {u['role']}")
+                if c3.button("🗑️", key=f"del_u_{u['id']}"):
+                    supabase.table('user_roles').delete().eq('id', u['id']).execute()
+                    st.rerun()
 

@@ -3,6 +3,15 @@ import time
 import streamlit.components.v1 as components 
 from supabase import create_client
 
+# ... après les imports ...
+
+# --- VIGILE SÉCURITÉ ---
+if 'user' not in st.session_state or st.session_state.user is None:
+    st.warning("⛔ Vous devez vous connecter sur la page d'accueil d'abord.")
+    st.stop() # Arrête le chargement de la page ici
+# -----------------------
+
+
 # --- CONFIGURATION (Mets tes clés ici) ---
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
@@ -193,3 +202,4 @@ else:
     st.write(f"**Poids Palette : {total_pal} kg**")
 
     components.html("""<script>var input = window.parent.document.querySelector("input[type=text]"); input.focus();</script>""", height=0)
+

@@ -30,7 +30,6 @@ def init_connection():
 
 supabase = init_connection()
 
-st.set_page_config(page_title="ADMINISTRATION", page_icon="⚙️", layout="wide")
 
 if 'panier_production' not in st.session_state:
     st.session_state.panier_production = []
@@ -324,4 +323,5 @@ with tab5:
                 if c3.button("🗑️", key=f"del_u_{u['id']}"):
                     supabase.table('user_roles').delete().eq('id', u['id']).execute()
                     st.rerun()
+
 

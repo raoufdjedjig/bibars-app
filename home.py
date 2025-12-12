@@ -6,7 +6,7 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🐔 Bibars Polska - Production")
+st.title("🐔 THE COOP - Production")
 
 st.markdown("""
 ### Bienvenue sur l'application de gestion d'usine.
@@ -40,3 +40,4 @@ try:
 except Exception as e:
     # C'est ce bloc qui manquait !
     st.error(f"❌ Erreur de connexion : {e}")
+

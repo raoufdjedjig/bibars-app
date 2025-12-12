@@ -85,7 +85,7 @@ while True:
             k3.metric("🏭 LIGNES ACTIVES", len(commandes), delta="En cours")
             
             # --- BOUTON IA ---
-            if st.button("🧠 DEMANDER ANALYSE AI"):
+            if st.button("🧠 DEMANDER ANALYSE AI", key="unique_key_ia"):
                 resume = f"Total: {total_kg}kg. " + "".join([f"{c['nom_client']}: {c['total_kg_produit']}/{c['objectif_kg']}kg. " for c in commandes])
                 st.info(ask_ai_analysis(resume))
 
@@ -177,3 +177,4 @@ while True:
         st.error(f"Erreur : {e}")
     
     time.sleep(5)
+

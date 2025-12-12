@@ -5,11 +5,6 @@ from supabase import create_client
 
 # ... après les imports ...
 
-# --- VIGILE SÉCURITÉ ---
-if 'user' not in st.session_state or st.session_state.user is None:
-    st.warning("⛔ Vous devez vous connecter sur la page d'accueil d'abord.")
-    st.stop() # Arrête le chargement de la page ici
-# -----------------------
 
 
 # --- CONFIGURATION (Mets tes clés ici) ---
@@ -202,4 +197,5 @@ else:
     st.write(f"**Poids Palette : {total_pal} kg**")
 
     components.html("""<script>var input = window.parent.document.querySelector("input[type=text]"); input.focus();</script>""", height=0)
+
 

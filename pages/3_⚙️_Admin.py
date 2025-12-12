@@ -5,7 +5,19 @@ import time
 from datetime import datetime
 from fpdf import FPDF
 from supabase import create_client
+# ... après les imports ...
 
+# --- VIGILE SÉCURITÉ (STRICT) ---
+if 'user' not in st.session_state or st.session_state.user is None:
+    st.warning("⛔ Vous devez vous connecter sur la page d'accueil d'abord.")
+    st.stop()
+
+if st.session_state.role != "admin":
+    st.error("⛔ ACCÈS REFUSÉ : Réservé aux administrateurs.")
+    st.stop()
+# -----------------------
+
+# ... la suite du code ...
 st.set_page_config(page_title="Bibars Login", page_icon="🔒", layout="centered")
 # --- CONNEXION SUPABASE ---
 try:
@@ -70,5 +82,6 @@ else:
                 
         except Exception as e:
             st.error(f"Erreur : Email ou mot de passe incorrect.")
+
 
 

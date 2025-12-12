@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import math
+import time
 from datetime import datetime
 from fpdf import FPDF
 from supabase import create_client
@@ -323,3 +324,4 @@ with tab4:
     all_p = supabase.table('produits').select("*").order('designation').execute().data
     if all_p:
         st.dataframe(pd.DataFrame(all_p)[['designation', 'dun14_carton', 'poids_fixe_carton', 'type_emballage']], use_container_width=True)
+

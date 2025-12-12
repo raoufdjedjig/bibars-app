@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import google.generativeai as genai
+from datetime import datetime
 from supabase import create_client
 
 # --- TES CLÉS (A REMPLIR) ---
@@ -10,7 +11,6 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 GOOGLE_API_KEY = "AIzaSyCxjeTMmF1IZHGtjkhCdaNclhpRzTEiAh0"
 
 
-# Configuration
 genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
@@ -22,159 +22,136 @@ supabase = init_connection()
 
 st.set_page_config(page_title="Smart Factory", page_icon="🏭", layout="wide")
 
-# --- CSS POUR LE DESIGN "CARTE" ---
+# CSS Design
 st.markdown("""
 <style>
-    /* Style global */
-    .block-container { padding-top: 1rem; }
-    
-    /* Style des cartes */
     .prod-card {
         background-color: #ffffff;
         padding: 20px;
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         margin-bottom: 20px;
-        border-left: 5px solid #4CAF50; /* Bordure verte à gauche */
+        border-left: 5px solid #4CAF50;
     }
-    .metric-box {
-        text-align: center;
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 8px;
-    }
-    .big-percent {
-        font-size: 40px;
-        font-weight: bold;
-        color: #4CAF50;
-    }
+    .big-percent { font-size: 40px; font-weight: bold; color: #4CAF50; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏭 MONITORING PRODUCTION")
-st.caption("Suivi temps réel • Usine Bibars Polska")
+# --- SIDEBAR : FILTRE DATE (DEMANDE 4) ---
+st.sidebar.title("📅 Filtres")
+date_selected = st.sidebar.date_input("Date de Production", value=datetime.now())
+# On transforme la date en string pour la comparaison
+date_str = date_selected.strftime("%Y-%m-%d")
+
+st.title(f"🏭 DASHBOARD DU {date_selected.strftime('%d/%m/%Y')}")
 
 placeholder = st.empty()
 
-# Fonction d'analyse IA
-def ask_ai_analysis(txt_context):
-    prompt = f"Analyse ces données de production (usine poulet) et donne 3 points clés (Succès ou Alerte) : {txt_context}"
+# Fonction IA
+def ask_ai(txt):
     try:
-        response = model.generate_content(prompt)
-        return response.text
-    except:
-        return "Erreur IA"
+        return model.generate_content(f"Analyse prod usine: {txt}").text
+    except: return "IA Indisponible"
 
 while True:
     try:
-        # 1. Données globales
-        resp_cmd = supabase.table("vue_suivi_commandes").select("*").eq('statut', 'EN_COURS').execute()
-        commandes = resp_cmd.data
-
-        with placeholder.container():
-            # --- KPI GLOBAUX (Haut de page) ---
-            # On récupère les totaux
-            all_scans = supabase.table('scans').select("poids_enregistre").execute()
-            df_all = pd.DataFrame(all_scans.data)
-            total_kg = df_all['poids_enregistre'].sum() if not df_all.empty else 0
+        # 1. On récupère TOUTES les commandes (Vue Suivi)
+        # Mais on va filtrer en Python car la vue SQL est parfois complexe à filtrer par date si elle n'est pas exposée
+        # Le mieux : récupérer la vue et filtrer le dataframe
+        resp = supabase.table("vue_suivi_commandes").select("*").execute()
+        data_brute = resp.data
+        
+        # 2. Filtrage par date (On a besoin de récupérer la date de création de la commande pour filtrer)
+        # Comme la vue 'vue_suivi_commandes' que j'ai donné avant n'avait pas la date, on va faire une astuce:
+        # On va re-récupérer les IDs des commandes de la date choisie
+        
+        # Récup des IDs commandes du jour choisi (created_at commence par la date)
+        # Le filtre gte (>=) date 00:00 et lte (<=) date 23:59
+        cmds_day = supabase.table('commandes').select('id')\
+            .gte('created_at', f"{date_str} 00:00:00")\
+            .lte('created_at', f"{date_str} 23:59:59")\
+            .execute()
+        
+        ids_du_jour = [c['id'] for c in cmds_day.data]
+        
+        # Maintenant on filtre les données de la vue pour ne garder que ces IDs
+        df = pd.DataFrame(data_brute)
+        
+        if df.empty or not ids_du_jour:
+            with placeholder.container():
+                st.warning(f"Aucune commande trouvée pour le {date_selected.strftime('%d/%m/%Y')}.")
+        else:
+            # On ne garde que les lignes dont 'commande_id' est dans la liste du jour
+            df_filtered = df[df['commande_id'].isin(ids_du_jour)]
             
-            # Affichage en 3 colonnes colorées
-            k1, k2, k3 = st.columns(3)
-            k1.metric("📦 TOTAL CARTONS", len(df_all) if not df_all.empty else 0, delta="Aujourd'hui")
-            k2.metric("⚖️ TONNAGE JOUR", f"{total_kg} kg", delta="Production")
-            k3.metric("🏭 LIGNES ACTIVES", len(commandes), delta="En cours")
-            
-            # --- BOUTON IA ---
-            if st.button("🧠 DEMANDER ANALYSE AI", key="unique_key_ia"):
-                resume = f"Total: {total_kg}kg. " + "".join([f"{c['nom_client']}: {c['total_kg_produit']}/{c['objectif_kg']}kg. " for c in commandes])
-                st.info(ask_ai_analysis(resume))
-
-            st.markdown("---")
-
-            if not commandes:
-                st.info("😴 Aucune production en cours. L'usine est calme.")
-            
+            if df_filtered.empty:
+                with placeholder.container():
+                    st.warning("Commandes trouvées mais pas de données dans la vue (bug synchro).")
             else:
-                # --- AFFICHAGE "CARTE" PAR CLIENT ---
-                for cmd in commandes:
-                    # Calculs
-                    obj = float(cmd['objectif_kg'])
-                    curr = float(cmd['total_kg_produit'])
-                    prog = min(curr / obj, 1.0)
-                    prog_percent = int(prog * 100)
+                with placeholder.container():
+                    # KPI
+                    total_kg = df_filtered['total_kg_produit'].sum()
+                    total_cartons = df_filtered['total_cartons_scannes'].sum()
                     
-                    # Début de la Carte
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="prod-card">
-                            <h3>🛒 CLIENT : {cmd['nom_client']} <span style="font-size:16px;color:gray">({cmd['reference_interne']})</span></h3>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    k1, k2, k3 = st.columns(3)
+                    k1.metric("📦 Colis Faits", int(total_cartons))
+                    k2.metric("⚖️ Tonnage", f"{total_kg} kg")
+                    k3.metric("🏭 Commandes", len(df_filtered))
+                    
+                    # IA Button
+                    if st.button("🧠 Analyse IA", key="btn_ai"):
+                        txt = f"Date {date_str}. Total {total_kg}kg. Détail: " + str(df_filtered[['nom_client', 'total_kg_produit']].to_dict())
+                        st.info(ask_ai(txt))
                         
-                        c1, c2 = st.columns([2, 1])
-                        
-                        with c1:
-                            # Barre de progression et chiffres
-                            st.progress(prog)
-                            c1a, c1b = st.columns(2)
-                            c1a.metric("Réalisé", f"{curr} kg")
-                            c1b.metric("Objectif", f"{obj} kg")
-                        
-                        with c2:
-                            # Gros Pourcentage
-                            st.markdown(f"<div style='text-align:center'><span class='big-percent'>{prog_percent}%</span><br>Avancement</div>", unsafe_allow_html=True)
+                    st.divider()
 
-                        # --- TABLEAU DE DÉTAIL (LE PLUS BEAU) ---
-                        with st.expander(f"Voir le détail des articles ({cmd['nom_client']})", expanded=True):
-                            
-                            # Récupération détail
-                            scans_resp = supabase.table('scans').select('produit_id, poids_enregistre').eq('commande_id', cmd['commande_id']).execute()
-                            
-                            if scans_resp.data:
-                                prods_resp = supabase.table('produits').select('id, designation').execute()
-                                df_scans = pd.DataFrame(scans_resp.data)
-                                df_prods = pd.DataFrame(prods_resp.data)
-                                
-                                merged = df_scans.merge(df_prods, left_on='produit_id', right_on='id')
-                                
-                                # On prépare le tableau final
-                                recap = merged.groupby('designation').agg(
-                                    Cartons=('poids_enregistre', 'count'),
-                                    Poids=('poids_enregistre', 'sum')
-                                ).reset_index()
-                                
-                                # Ajout d'une colonne "Barre visuelle" (Astuce Pandas)
-                                # On imagine que chaque article a un mini objectif pour la beauté (ex: max de la série)
-                                max_val = recap['Poids'].max()
-                                recap['Visuel'] = recap['Poids'] # On duplique pour l'affichage
-                                
-                                # AFFICHAGE AVEC BARRES INTÉGRÉES
-                                st.dataframe(
-                                    recap,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    column_config={
-                                        "designation": "Article",
-                                        "Cartons": st.column_config.NumberColumn("📦 Colis"),
-                                        "Poids": st.column_config.NumberColumn("⚖️ Poids (kg)", format="%.1f kg"),
-                                        "Visuel": st.column_config.ProgressColumn(
-                                            "Volume",
-                                            help="Volume relatif",
-                                            format="%.0f",
-                                            min_value=0,
-                                            max_value=float(max_val),
-                                        ),
-                                    }
-                                )
-                            else:
-                                st.caption("⏳ En attente du premier scan...")
+                    # LISTE DES CARTES
+                    for _, row in df_filtered.iterrows():
+                        obj = float(row['objectif_kg'])
+                        curr = float(row['total_kg_produit'])
+                        # Eviter division par zero
+                        prog = min(curr / obj, 1.0) if obj > 0 else 0
                         
-                        st.write("") # Espace vide
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="prod-card">
+                                <h3>{row['nom_client']} <span style="color:gray;font-size:14px">({row['reference_interne']})</span></h3>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            c1, c2 = st.columns([3, 1])
+                            with c1:
+                                st.progress(prog)
+                                st.write(f"**{curr} kg** / {obj} kg")
+                            with c2:
+                                st.markdown(f"<div class='big-percent'>{int(prog*100)}%</div>", unsafe_allow_html=True)
 
-            st.caption(f"Dernière synchro : {time.strftime('%H:%M:%S')}")
+                            # DETAIL
+                            with st.expander("Voir Détail"):
+                                # On récupère les scans
+                                scans = supabase.table('scans').select('produit_id, poids_enregistre')\
+                                    .eq('commande_id', row['commande_id']).execute()
+                                
+                                if scans.data:
+                                    # Pour avoir les noms produits, on a besoin de la table produits
+                                    # (Optimisation : charger produits une seule fois hors boucle serait mieux, mais ok ici)
+                                    prods = supabase.table('produits').select('id, designation').execute()
+                                    df_s = pd.DataFrame(scans.data)
+                                    df_p = pd.DataFrame(prods.data)
+                                    merged = df_s.merge(df_p, left_on='produit_id', right_on='id')
+                                    
+                                    recap = merged.groupby('designation').agg(
+                                        Colis=('poids_enregistre', 'count'),
+                                        Poids=('poids_enregistre', 'sum')
+                                    ).reset_index()
+                                    
+                                    st.dataframe(recap, use_container_width=True, hide_index=True)
+                                else:
+                                    st.caption("Rien scanné.")
+                    
+                    st.caption(f"Last update: {time.strftime('%H:%M:%S')}")
 
     except Exception as e:
         st.error(f"Erreur : {e}")
     
     time.sleep(5)
-

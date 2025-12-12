@@ -4,3 +4,4 @@ supabase
 google-generativeai
 fpdf
 openpyxl
+extra-streamlit-components

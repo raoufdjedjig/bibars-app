@@ -7,6 +7,7 @@ from supabase import create_client
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
 
+
 @st.cache_resource
 def init_connection():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -54,7 +55,7 @@ if st.session_state.commande_choisie is None:
                     st.rerun()
 
 # ==============================================================================
-# ÉTAPE 2 : CHOIX PALETTE (NOUVEAU)
+# ÉTAPE 2 : CHOIX PALETTE
 # ==============================================================================
 elif st.session_state.palette_choisie is None:
     cmd = st.session_state.commande_choisie
@@ -67,25 +68,21 @@ elif st.session_state.palette_choisie is None:
     with c_tit:
         st.markdown(f"### 📦 {cmd['nom_client']} > CHOIX PALETTE")
 
-    # On charge les palettes existantes pour cette commande
     palettes_resp = supabase.table('palettes').select("*").eq('commande_id', cmd['commande_id']).order('numero').execute()
     palettes = palettes_resp.data
     
     if not palettes:
         st.warning("Aucune palette prévue. Créez-en une manuellement.")
     
-    # Affichage des palettes disponibles
     cols_pal = st.columns(2)
     for idx, pal in enumerate(palettes):
         with cols_pal[idx % 2]:
-            # On affiche le Type en gros pour guider l'opérateur
             label = f"PALETTE {pal['numero']}\n({pal['type_emballage']})"
             if st.button(label, key=f"pal_{pal['id']}"):
                 st.session_state.palette_choisie = pal
                 st.rerun()
     
     st.divider()
-    # Bouton de secours pour créer une palette hors plan
     with st.expander("➕ Créer une nouvelle palette (Hors plan)"):
         new_type = st.selectbox("Type", ["MAP", "SOUS_VIDE", "VRAC"])
         if st.button("Créer Palette"):
@@ -95,20 +92,18 @@ elif st.session_state.palette_choisie is None:
             st.rerun()
 
 # ==============================================================================
-# ÉTAPE 3 : SCAN (AVEC RÈGLE DE MÉLANGE)
+# ÉTAPE 3 : SCAN (AVEC BLOQUAGE SURPRODUCTION)
 # ==============================================================================
 else:
     cmd = st.session_state.commande_choisie
     pal = st.session_state.palette_choisie
     
-    # Header
     c_back, c_info = st.columns([1, 4])
     with c_back:
         if st.button("🔙 PALETTE"):
             st.session_state.palette_choisie = None
             st.rerun()
     with c_info:
-        # Affichage très clair de la palette active
         st.markdown(f"""
         <div class='palette-card'>
             <b>CLIENT : {cmd['nom_client']}</b><br>
@@ -116,13 +111,12 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-    # Formulaire
     with st.form("scan_form", clear_on_submit=True):
         code_scanne = st.text_input("SCANNEZ 👇", key="scan_input")
         submitted = st.form_submit_button("VALIDER")
 
     if submitted and code_scanne:
-        # 1. Check Produit
+        # 1. Check Produit existe
         prod_resp = supabase.table('produits').select("*").eq('dun14_carton', code_scanne).execute()
         
         if not prod_resp.data:
@@ -131,48 +125,20 @@ else:
             produit = prod_resp.data[0]
             
             # 2. Check Commande (Est-ce que le client veut ça ?)
-            verif_cmd = supabase.table('ligne_commandes').select('*').eq('commande_id', cmd['commande_id']).eq('produit_id', produit['id']).execute()
+            # On récupère aussi la QUANTITÉ CIBLE
+            verif_cmd = supabase.table('ligne_commandes').select('*')\
+                .eq('commande_id', cmd['commande_id'])\
+                .eq('produit_id', produit['id']).execute()
             
             if not verif_cmd.data:
                 st.markdown(f'<div class="big-error">⛔ PAS COMMANDÉ !</div>', unsafe_allow_html=True)
             
             else:
-                # 3. CRUCIAL : CHECK TYPE EMBALLAGE vs PALETTE
-                # Si la palette est MAP, le produit DOIT être MAP
-                if produit['type_emballage'] != pal['type_emballage']:
-                    st.markdown(f'''
-                        <div class="big-error">
-                            ⛔ MÉLANGE INTERDIT !<br>
-                            Palette : {pal['type_emballage']}<br>
-                            Produit : {produit['type_emballage']}
-                        </div>
-                    ''', unsafe_allow_html=True)
-                    st.error("Changez de palette ou prenez le bon produit.")
+                # --- NOUVEAU : VÉRIFICATION DE LA QUANTITÉ (STOP SCAN) ---
+                objectif_cartons = verif_cmd.data[0]['quantite_cible_cartons']
                 
-                else:
-                    # 4. Succès -> On enregistre avec l'ID Palette
-                    new_scan = {
-                        "commande_id": cmd['commande_id'],
-                        "produit_id": produit['id'],
-                        "palette_id": pal['id'], # Lien vers la palette
-                        "poids_enregistre": produit['poids_fixe_carton']
-                    }
-                    try:
-                        supabase.table("scans").insert(new_scan).execute()
-                        st.markdown(f'''
-                            <div class="big-success">
-                                ✅ AJOUTÉ SUR PALETTE {pal['numero']}<br>
-                                {produit['designation']}
-                            </div>
-                        ''', unsafe_allow_html=True)
-                    except Exception as e: st.error(f"Erreur : {e}")
+                # On compte combien on en a déjà fait
+                deja_fait_resp = supabase.table('scans').select('id')\
+                    .eq('commande_id', cmd['commande_id'])\
+                    .eq('produit_id', produit['id']).
 
-    # Historique Palette
-    st.caption(f"Contenu actuel de la Palette {pal['numero']} :")
-    scans_pal = supabase.table('scans').select("poids_enregistre").eq('palette_id', pal['id']).execute()
-    total_pal = sum([s['poids_enregistre'] for s in scans_pal.data]) if scans_pal.data else 0
-    st.progress(min(total_pal/500, 1.0)) # Barre de remplissage palette (Obj 500kg)
-    st.write(f"**Poids Palette : {total_pal} kg**")
-
-    # Focus JS
-    components.html("""<script>var input = window.parent.document.querySelector("input[type=text]"); input.focus();</script>""", height=0)

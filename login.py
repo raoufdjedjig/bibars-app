@@ -16,7 +16,7 @@ def login_page():
 
     # SI PAS CONNECTÉ -> AFFICHER LE FORMULAIRE
     st.title("🔒 Connexion Bibars")
-    # ... (le reste du code formulaire d'avant) ...
+    
 # --- TES CLÉS ---
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
@@ -37,28 +37,33 @@ def login_page():
         password = st.text_input("Mot de passe", type="password")
         submit = st.form_submit_button("Se connecter", type="primary")
 
-    if submit:
+    
+if submit:
         try:
-            # Vérification Supabase
+            # 1. Connexion Supabase Auth (Vérifie le mot de passe)
             response = supabase.auth.sign_in_with_password({"email": email, "password": password})
             
             if response.user:
-                # ON ENREGISTRE L'UTILISATEUR DANS LA SESSION
                 st.session_state.user = response.user
                 
-                # Rôles simples
-                if "scan" in email:
-                    st.session_state.role = "operateur"
+                # 2. RÉCUPÉRATION DU RÔLE (NOUVEAU)
+                # On demande à la table : "Quel est le rôle de cet email ?"
+                role_resp = supabase.table('user_roles').select('role').eq('email', email).execute()
+                
+                if role_resp.data:
+                    # On a trouvé le rôle dans la base
+                    st.session_state.role = role_resp.data[0]['role']
                 else:
-                    st.session_state.role = "admin"
+                    # Cas de sécurité : Si l'utilisateur n'est pas dans la liste des rôles, on le met opérateur par défaut ou on bloque
+                    st.warning("Compte valide mais aucun rôle défini. Contactez l'admin.")
+                    st.session_state.role = "operateur" # ou None pour bloquer
                 
-                st.success("Connexion réussie !")
+                st.success(f"Connexion réussie (Rôle : {st.session_state.role}) !")
                 time.sleep(0.5)
-                st.rerun() # Recharge la page pour que le "Cerveau" (Home.py) voie le changement
+                st.rerun()
                 
-        except Exception:
-            st.error("Identifiants incorrects.")
-
+        except Exception as e:
+            st.error("Identifiants incorrects ou erreur système.")
+            
 # On lance la fonction
-login_page()
-
+login_page()            

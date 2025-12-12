@@ -1,43 +1,43 @@
 import streamlit as st
 
-st.set_page_config(
-    page_title="Bibars Production",
-    page_icon="🐔",
-    layout="centered"
-)
+# --- INITIALISATION SESSION ---
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "role" not in st.session_state:
+    st.session_state.role = None
 
-st.title("🐔 THE COOP - Production")
+# --- DÉFINITION DES PAGES ---
+# On "prépare" les pages sans les afficher
+page_login = st.Page("login.py", title="Connexion", icon="🔒")
+page_scanner = st.Page("pages/1_🔫_Scanner.py", title="Scanner", icon="🔫")
+page_dashboard = st.Page("pages/2_🏭_Dashboard.py", title="Dashboard", icon="🏭")
+page_admin = st.Page("pages/3_⚙️_Admin.py", title="Admin", icon="⚙️")
 
-st.markdown("""
-### Bienvenue sur l'application de gestion d'usine.
+# --- LOGIQUE DU ROUTEUR (Le Cerveau) ---
 
-Utilisez le menu à gauche pour naviguer :
+if st.session_state.user is None:
+    # CAS 1 : PAS CONNECTÉ
+    # On force l'affichage d'une seule page : le Login.
+    # Le menu de gauche sera vide ou caché.
+    pg = st.navigation([page_login])
 
-* **🔫 Scanner** : Pour les opérateurs sur la ligne (Tablettes).
-* **🏭 Dashboard** : Pour suivre l'avancement en temps réel (TV/Bureau).
-* **⚙️ Admin** : Pour créer des clients et lancer des commandes.
-
----
-*V 1.0 - Connecté à Supabase*
-""")
-
-# Petit test de connexion pour rassurer
-try:
-    from supabase import create_client
+else:
+    # CAS 2 : CONNECTÉ
+    # On affiche le menu selon le rôle ! (C'est encore plus pro)
     
-    # ---------------------------------------------------------
-    # COLLE TA CLÉ JUSTE EN DESSOUS ENTRE LES GUILLEMETS
-    # ---------------------------------------------------------
-    SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co" 
-    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
-    
-    # Création de la connexion
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    
-    # Si on arrive ici sans erreur, c'est gagné
-    st.success("✅ Connexion Base de Données : OK")
+    if st.session_state.role == "admin":
+        # L'admin voit TOUT
+        pg = st.navigation({
+            "Production": [page_scanner],
+            "Gestion": [page_dashboard, page_admin],
+            "Compte": [page_login] # Pour se déconnecter éventuellement
+        })
+    else:
+        # L'opérateur ne voit QUE le scanner (il ne peut même pas cliquer sur Admin)
+        pg = st.navigation({
+            "Production": [page_scanner],
+            "Compte": [page_login]
+        })
 
-except Exception as e:
-    # C'est ce bloc qui manquait !
-    st.error(f"❌ Erreur de connexion : {e}")
-
+# --- LANCEMENT DE LA PAGE CHOISIE ---
+pg.run()

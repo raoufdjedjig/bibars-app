@@ -218,14 +218,15 @@ with tab3:
     except: pass
 
 # ==============================================================================
-# TAB 4 : PRODUITS
+# ONGLET 4 : PRODUITS (VERSION DEBUG + ROBUSTE)
 # ==============================================================================
 with tab4:
     st.header("📦 Base Articles")
     c1, c2 = st.columns(2)
     
+    # --- 1. AJOUT MANUEL ---
     with c1:
-        st.subheader("Ajout / Maj")
+        st.subheader("Ajout / Maj Manuel")
         with st.form("prod_form"):
             des = st.text_input("Désignation").upper()
             code = st.text_input("Code Barre")
@@ -234,33 +235,91 @@ with tab4:
             
             if st.form_submit_button("Sauvegarder"):
                 if des and code:
-                    data = {"designation": des, "dun14_carton": code, "poids_fixe_carton": poids, "type_emballage": type_emb}
-                    exist = supabase.table('produits').select("id").eq('dun14_carton', code).execute()
-                    if exist.data:
-                        supabase.table('produits').update(data).eq('id', exist.data[0]['id']).execute()
-                    else:
-                        supabase.table('produits').insert(data).execute()
-                    st.rerun()
+                    try:
+                        data = {"designation": des, "dun14_carton": code, "poids_fixe_carton": poids, "type_emballage": type_emb}
+                        exist = supabase.table('produits').select("id").eq('dun14_carton', code).execute()
+                        if exist.data:
+                            supabase.table('produits').update(data).eq('id', exist.data[0]['id']).execute()
+                            st.success(f"Mise à jour de {des} !")
+                        else:
+                            supabase.table('produits').insert(data).execute()
+                            st.success(f"Création de {des} !")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur Supabase : {e}")
                     
+    # --- 2. IMPORT EXCEL (CORRIGÉ) ---
     with c2:
-        st.info("Import Excel Massif (avec colonne 'Type')")
-        up = st.file_uploader("Excel", type=['xlsx'])
+        st.subheader("Import Excel Massif")
+        st.info("Colonnes obligatoires : Article, Code, Poids, Type")
+        
+        up = st.file_uploader("Fichier Excel (.xlsx)", type=['xlsx'])
+        
         if up:
             try:
+                # 1. Lecture du fichier
                 df = pd.read_excel(up)
-                if st.button("Importer"):
-                    for _, r in df.iterrows():
-                        # Gestion des colonnes (si pas de colonne type, on met MAP par défaut)
-                        t = r['Type'] if 'Type' in df.columns else 'MAP'
-                        d = {"designation": r['Article'], "dun14_carton": str(r['Code']).replace('.0',''), "poids_fixe_carton": r['Poids'], "type_emballage": t}
+                
+                # 2. Vérification des colonnes (Debug)
+                cols_attendues = ['Article', 'Code', 'Poids'] # 'Type' est optionnel
+                if not set(cols_attendues).issubset(df.columns):
+                    st.error("❌ Erreur de colonnes !")
+                    st.write("Colonnes attendues :", cols_attendues)
+                    st.write("Colonnes trouvées dans votre fichier :", list(df.columns))
+                    st.stop() # On arrête tout
+                
+                st.write("Aperçu des données :")
+                st.dataframe(df.head(3), hide_index=True)
+                
+                if st.button("🚀 LANCER L'IMPORTATION"):
+                    bar = st.progress(0)
+                    erreurs = []
+                    succes = 0
+                    
+                    for idx, r in df.iterrows():
+                        try:
+                            # Gestion des données (Nettoyage)
+                            # On gère le 'Type' s'il n'est pas dans le fichier
+                            t = r['Type'] if 'Type' in df.columns else 'MAP'
+                            # On nettoie le code barre (enlève les .0 et les espaces)
+                            c_clean = str(r['Code']).replace('.0','').strip()
+                            
+                            d = {
+                                "designation": str(r['Article']).upper().strip(), 
+                                "dun14_carton": c_clean, 
+                                "poids_fixe_carton": float(r['Poids']), 
+                                "type_emballage": str(t).upper().strip()
+                            }
+                            
+                            # Logique UPSERT (Mise à jour ou Création)
+                            ex = supabase.table('produits').select("id").eq('dun14_carton', d['dun14_carton']).execute()
+                            
+                            if ex.data: 
+                                supabase.table('produits').update(d).eq('id', ex.data[0]['id']).execute()
+                            else: 
+                                supabase.table('produits').insert(d).execute()
+                            
+                            succes += 1
+                        except Exception as inner_e:
+                            erreurs.append(f"Ligne {idx+2}: {inner_e}")
                         
-                        ex = supabase.table('produits').select("id").eq('dun14_carton', d['dun14_carton']).execute()
-                        if ex.data: supabase.table('produits').update(d).eq('id', ex.data[0]['id']).execute()
-                        else: supabase.table('produits').insert(d).execute()
-                    st.success("Fait !")
-            except: st.error("Erreur fichier")
+                        bar.progress((idx+1)/len(df))
+                    
+                    if erreurs:
+                        st.warning(f"{succes} importés, mais {len(erreurs)} erreurs.")
+                        with st.expander("Voir les erreurs"):
+                            for err in erreurs: st.write(err)
+                    else:
+                        st.success(f"✅ {succes} articles importés avec succès !")
+                        time.sleep(2)
+                        st.rerun()
+                        
+            except Exception as e: 
+                # C'est ici qu'on verra la vraie erreur générale
+                st.error(f"❌ Erreur de lecture du fichier : {e}")
             
     st.divider()
     all_p = supabase.table('produits').select("*").order('designation').execute().data
     if all_p:
-        st.dataframe(pd.DataFrame(all_p)[['designation', 'type_emballage', 'poids_fixe_carton']], use_container_width=True)
+        st.dataframe(pd.DataFrame(all_p)[['designation', 'dun14_carton', 'poids_fixe_carton', 'type_emballage']], use_container_width=True)

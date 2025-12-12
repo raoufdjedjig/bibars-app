@@ -30,7 +30,7 @@ if 'role' not in st.session_state:
     st.session_state.role = None
 
 # --- 3. DESIGN PAGE ---
-st.title("🔒 Connexion Bibars")
+st.title("🔒 Connexion The Coop")
 
 # --- 4. SI DÉJÀ CONNECTÉ ---
 if st.session_state.user:
@@ -73,6 +73,7 @@ else:
                 
         except Exception as e:
             st.error("Email ou mot de passe incorrect.")
+
 
 
 

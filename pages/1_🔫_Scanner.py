@@ -8,8 +8,6 @@ SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
 
 
-
-
 @st.cache_resource
 def init_connection():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -27,9 +25,7 @@ st.markdown("""
     .big-warning { background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 10px;}
     
     div[data-testid="stButton"] > button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
+        width: 100%; border-radius: 5px; height: 3em;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -60,26 +56,48 @@ with st.form("scan_form", clear_on_submit=True):
     submitted = st.form_submit_button("VALIDER")
 
 if submitted and code_scanne:
+    # A. Est-ce que ce code existe dans la base produits ?
     prod_resp = supabase.table('produits').select("*").eq('dun14_carton', code_scanne).execute()
     
     if not prod_resp.data:
-        st.markdown(f'<div class="big-error">⛔ CODE INCONNU !<br>{code_scanne}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="big-error">⛔ CODE BARRE INCONNU !<br>{code_scanne}</div>', unsafe_allow_html=True)
     else:
         produit = prod_resp.data[0]
-        new_scan = {
-            "commande_id": id_commande,
-            "produit_id": produit['id'],
-            "poids_enregistre": produit['poids_fixe_carton']
-        }
-        try:
-            supabase.table("scans").insert(new_scan).execute()
+        
+        # B. (NOUVEAU) Est-ce que ce produit est prévu dans la commande ?
+        verif_commande = supabase.table('ligne_commandes').select('*')\
+            .eq('commande_id', id_commande)\
+            .eq('produit_id', produit['id'])\
+            .execute()
+            
+        if not verif_commande.data:
+            # LE CLIENT N'A PAS COMMANDÉ ÇA -> ERREUR
             st.markdown(f'''
-                <div class="big-success">
-                    ✅ AJOUTÉ : {produit['designation']} (+{produit['poids_fixe_carton']} kg)
+                <div class="big-error">
+                    ⛔ ERREUR : PRODUIT NON ATTENDU !<br>
+                    Ce client n'a pas commandé de :<br>
+                    {produit['designation']}
                 </div>
             ''', unsafe_allow_html=True)
-        except Exception as e:
-            st.error(f"Erreur : {e}")
+            # Petit son d'erreur système si possible
+            st.error("Ce produit n'est pas dans la liste pour cette commande.")
+            
+        else:
+            # C. TOUT EST BON -> ON ENREGISTRE
+            new_scan = {
+                "commande_id": id_commande,
+                "produit_id": produit['id'],
+                "poids_enregistre": produit['poids_fixe_carton']
+            }
+            try:
+                supabase.table("scans").insert(new_scan).execute()
+                st.markdown(f'''
+                    <div class="big-success">
+                        ✅ AJOUTÉ : {produit['designation']} (+{produit['poids_fixe_carton']} kg)
+                    </div>
+                ''', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Erreur : {e}")
 
 # --- 3. ANNULATION ---
 st.markdown("---")
@@ -108,5 +126,4 @@ if last_scans_list.data:
         heure = scan['scanned_at'].split('T')[1].split('.')[0]
         st.text(f"🕒 {heure} - {scan['poids_enregistre']} kg")
 
-# Focus auto JS (C'est cette ligne qui posait problème avant, ici elle est corrigée)
 components.html("""<script>var input = window.parent.document.querySelector("input[type=text]"); input.focus();</script>""", height=0)

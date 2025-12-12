@@ -3,3 +3,4 @@ pandas
 supabase
 google-generativeai
 fpdf
+openpyxl

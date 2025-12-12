@@ -7,40 +7,32 @@ from fpdf import FPDF
 from supabase import create_client
 # ... après les imports ...
 
-# --- VIGILE SÉCURITÉ (STRICT) ---
-if 'user' not in st.session_state or st.session_state.user is None:
-    st.warning("⛔ Vous devez vous connecter sur la page d'accueil d'abord.")
-    st.stop()
-
-if st.session_state.role != "admin":
-    st.error("⛔ ACCÈS REFUSÉ : Réservé aux administrateurs.")
-    st.stop()
-# -----------------------
-
-# ... la suite du code ...
 st.set_page_config(page_title="Bibars Login", page_icon="🔒", layout="centered")
-# --- CONNEXION SUPABASE ---
+
+# --- 1. CONNEXION SUPABASE ---
 try:
-# --- TES CLÉS ICI ---
+    # REMETS TES CLES ICI
+    SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
+    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
+    
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-except:
-    st.error("Erreur de configuration Supabase.")
+    
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error(f"Erreur de configuration Supabase : {e}")
     st.stop()
 
-# --- INITIALISATION SESSION ---
+# --- 2. INITIALISATION SESSION ---
 if 'user' not in st.session_state:
     st.session_state.user = None
 if 'role' not in st.session_state:
     st.session_state.role = None
 
-# --- DESIGN PAGE ---
+# --- 3. DESIGN PAGE ---
 st.title("🔒 Connexion Bibars")
 
-# --- SI DÉJÀ CONNECTÉ ---
+# --- 4. SI DÉJÀ CONNECTÉ ---
 if st.session_state.user:
     st.success(f"✅ Bonjour {st.session_state.user.email} !")
     st.info("Utilisez le menu à gauche pour naviguer.")
@@ -55,7 +47,7 @@ if st.session_state.user:
         st.session_state.role = None
         st.rerun()
 
-# --- SI PAS CONNECTÉ (FORMULAIRE) ---
+# --- 5. SI PAS CONNECTÉ (FORMULAIRE) ---
 else:
     with st.form("login_form"):
         email = st.text_input("Email")
@@ -64,14 +56,13 @@ else:
     
     if submit:
         try:
-            # On demande à Supabase de vérifier le mot de passe
+            # Vérification via Supabase Auth
             response = supabase.auth.sign_in_with_password({"email": email, "password": password})
             
             if response.user:
                 st.session_state.user = response.user
                 
-                # DÉFINITION DES RÔLES (SIMPLE)
-                # Si l'email contient "scan", c'est un opérateur, sinon c'est un admin
+                # DÉFINITION DES RÔLES
                 if "scan" in email:
                     st.session_state.role = "operateur"
                 else:
@@ -81,7 +72,8 @@ else:
                 st.rerun()
                 
         except Exception as e:
-            st.error(f"Erreur : Email ou mot de passe incorrect.")
+            st.error("Email ou mot de passe incorrect.")
+
 
 
 

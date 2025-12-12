@@ -9,18 +9,15 @@ import extra_streamlit_components as stx # La librairie Cookie
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
 
-# --- GESTIONNAIRE DE COOKIES (CACHE) ---
-@st.cache_resource
-def get_manager():
-    return stx.CookieManager()
 
 def login_page():
     st.title("🔒 Connexion Bibars")
     
-    # 1. Initialiser le gestionnaire de cookies
-    cookie_manager = get_manager()
+    # --- CORRECTION ICI : ON APPELLE DIRECTEMENT LE MANAGER SANS CACHE ---
+    # On donne une clé unique pour éviter les conflits
+    cookie_manager = stx.CookieManager(key="bibars_auth_cookie")
     
-    # On récupère tous les cookies pour voir si 'bibars_email' existe
+    # On récupère tous les cookies
     cookies = cookie_manager.get_all()
     cookie_email = cookies.get("bibars_email")
 
@@ -32,23 +29,22 @@ def login_page():
         st.stop()
 
     # --- LOGIQUE D'AUTO-CONNEXION VIA COOKIE ---
-    # Si on n'est pas connecté dans la session, mais qu'on a un cookie
     if "user" not in st.session_state or st.session_state.user is None:
         if cookie_email:
-            # On vérifie que cet email a bien un rôle dans la base (Sécurité)
             try:
+                # On vérifie que le cookie correspond à un rôle
                 role_resp = supabase.table('user_roles').select('role').eq('email', cookie_email).execute()
                 if role_resp.data:
-                    # BINGO ! On restaure la session
-                    st.session_state.user = type('obj', (object,), {'email': cookie_email}) # On recrée un faux objet user avec l'email
+                    # On restaure la session
+                    st.session_state.user = type('obj', (object,), {'email': cookie_email})
                     st.session_state.role = role_resp.data[0]['role']
                     st.success(f"👋 Re-bonjour {cookie_email} !")
                     time.sleep(1)
                     st.rerun()
             except:
-                pass # Si le cookie est invalide, on ne fait rien, le formulaire s'affichera
+                pass 
 
-    # --- CAS 1 : UTILISATEUR CONNECTÉ (SESSION ACTIVE) ---
+    # --- CAS 1 : UTILISATEUR CONNECTÉ ---
     if "user" in st.session_state and st.session_state.user:
         st.write(f"Connecté en tant que : **{st.session_state.user.email}**")
         
@@ -59,15 +55,14 @@ def login_page():
             st.info("👷 Droits : OPÉRATEUR")
 
         if st.button("Se déconnecter", type="primary"):
-            # 1. On supprime le cookie du navigateur
+            # Suppression du cookie
             cookie_manager.delete("bibars_email")
-            # 2. On vide la session
             st.session_state.user = None
             st.session_state.role = None
             st.rerun()
         return
 
-    # --- CAS 2 : FORMULAIRE DE CONNEXION (SI PAS DE COOKIE) ---
+    # --- CAS 2 : FORMULAIRE DE CONNEXION ---
     st.write("Veuillez vous identifier pour accéder à l'usine.")
 
     with st.form("login_form"):
@@ -77,13 +72,11 @@ def login_page():
 
     if submit:
         try:
-            # Vérification Supabase Auth
             response = supabase.auth.sign_in_with_password({"email": email, "password": password})
             
             if response.user:
                 st.session_state.user = response.user
                 
-                # Récupération du rôle
                 try:
                     role_resp = supabase.table('user_roles').select('role').eq('email', email).execute()
                     if role_resp.data:
@@ -93,8 +86,7 @@ def login_page():
                 except:
                     st.session_state.role = "operateur"
 
-                # === CRÉATION DU COOKIE ICI ===
-                # Expire dans 30 jours
+                # === CRÉATION DU COOKIE ===
                 expires = datetime.datetime.now() + datetime.timedelta(days=30)
                 cookie_manager.set("bibars_email", email, expires_at=expires)
                 
@@ -107,3 +99,5 @@ def login_page():
 
 if __name__ == "__main__":
     login_page()
+    login_page()
+

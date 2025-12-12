@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from fpdf import FPDF
+import base64
 from supabase import create_client
 
 # --- TES CLÉS ICI ---
@@ -14,123 +16,203 @@ def init_connection():
 
 supabase = init_connection()
 
-st.set_page_config(page_title="ADMINISTRATION", page_icon="⚙️", layout="wide")
-st.title("⚙️ PANNEAU D'ADMINISTRATION")
+st.set_page_config(page_title="PLANNING PROD", page_icon="📅", layout="wide")
 
-tab1, tab2 = st.tabs(["👥 GÉRER LES CLIENTS", "🚀 LANCER UNE PRODUCTION"])
-
-# --- ONGLET 1 : CLIENTS (Pas de changement) ---
-with tab1:
-    st.header("Nouveau Client")
-    with st.form("form_client", clear_on_submit=True):
-        nom_client = st.text_input("Nom du Client (ex: LIDL)").upper()
-        if st.form_submit_button("Créer le Client"):
-            if nom_client:
-                supabase.table('clients').insert({"nom": nom_client}).execute()
-                st.success(f"Client '{nom_client}' ajouté !")
-
-    st.divider()
-    st.subheader("Clients existants :")
-    try:
-        clients = supabase.table('clients').select("*").execute().data
-        if clients:
-            for c in clients:
-                st.text(f"- {c['nom']}")
-    except:
-        st.error("Erreur de lecture clients")
-
-# --- ONGLET 2 : CRÉER UNE COMMANDE (Modifié) ---
-with tab2:
-    st.header("Nouvelle Commande")
+# --- FONCTION GÉNÉRATION PDF ---
+def create_pdf(date_prevue, panier):
+    pdf = FPDF()
+    pdf.add_page()
     
-    # 1. Chargement des données
+    # Titre
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, f"ORDRE DE PRODUCTION - {date_prevue}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Pour chaque client dans le panier
+    for item in panier:
+        client = item['client_nom']
+        ref = item['ref_commande']
+        produits = item['produits'] # C'est un DataFrame
+        
+        pdf.set_font("Arial", 'B', 12)
+        pdf.set_fill_color(200, 220, 255) # Bleu clair
+        pdf.cell(0, 10, f"CLIENT : {client} (Ref: {ref})", ln=True, fill=True)
+        
+        # En-tête tableau
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(100, 8, "Désignation", 1)
+        pdf.cell(40, 8, "Qté (Colis)", 1)
+        pdf.cell(40, 8, "Poids (kg)", 1)
+        pdf.ln()
+        
+        # Lignes produits
+        pdf.set_font("Arial", '', 10)
+        total_poids_client = 0
+        for _, row in produits.iterrows():
+            nom = row['designation']
+            qty = row['Quantité Cible (Cartons)']
+            poids_unit = row['poids_fixe_carton']
+            total = qty * poids_unit
+            total_poids_client += total
+            
+            # On tronque le nom si trop long pour le PDF
+            pdf.cell(100, 8, nom[:45], 1)
+            pdf.cell(40, 8, str(int(qty)), 1)
+            pdf.cell(40, 8, f"{total:.1f}", 1)
+            pdf.ln()
+            
+        pdf.set_font("Arial", 'I', 10)
+        pdf.cell(0, 8, f"Total Client : {total_poids_client} kg", ln=True, align='R')
+        pdf.ln(5)
+        
+    return pdf.output(dest='S').encode('latin-1')
+
+# --- INITIALISATION MÉMOIRE (PANIER) ---
+if 'panier_production' not in st.session_state:
+    st.session_state.panier_production = []
+
+st.title("📅 PLANIFICATION DE LA PRODUCTION")
+
+# 1. SÉLECTION DE LA DATE (Commune à tous)
+st.sidebar.header("1. Configuration")
+date_prod = st.sidebar.date_input("Date de Production", value=datetime.now())
+date_str = date_prod.strftime("%d/%m/%y")
+
+# --- COLONNE GAUCHE : AJOUTER DES COMMANDES ---
+col_form, col_review = st.columns([1.2, 1])
+
+with col_form:
+    st.subheader("📝 Ajouter une commande au planning")
+    st.markdown(f"**Date sélectionnée : {date_str}**")
+    
+    # Chargement clients/produits
     clients_resp = supabase.table('clients').select("*").execute()
     liste_clients = {c['nom']: c['id'] for c in clients_resp.data} if clients_resp.data else {}
     
     prods_resp = supabase.table('produits').select("id, designation, poids_fixe_carton").order('designation').execute()
     
-    if not liste_clients:
-        st.warning("Ajoutez des clients d'abord.")
-    elif not prods_resp.data:
-        st.warning("Ajoutez des produits dans la base d'abord.")
+    if not liste_clients or not prods_resp.data:
+        st.error("Base de données vide (Clients ou Produits manquants).")
     else:
-        # --- FORMULAIRE DE COMMANDE ---
+        # Formulaire d'ajout
+        choix_client = st.selectbox("Choisir le Client", list(liste_clients.keys()))
+        ref_auto = f"CMD-{choix_client}-{date_str}"
         
-        # A. Sélection Client ET Date (Sur 2 colonnes)
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            choix_nom = st.selectbox("Choisir le Client", list(liste_clients.keys()))
-        
-        with col2:
-            # NOUVEAU : Le sélecteur de date
-            date_prod = st.date_input("Date de Production", value=datetime.now())
-        
-        # B. Génération Automatique de la Référence avec la date choisie
-        # On formate la date choisie en "Jour/Mois/Année" (ex: 12/12/25)
-        date_str = date_prod.strftime("%d/%m/%y")
-        
-        # On crée la référence liée à CETTE date
-        ref_auto = f"CMD-{choix_nom}-{date_str}"
-        
-        st.info(f"📌 Référence générée : **{ref_auto}**")
-
-        st.markdown("---")
-        st.subheader("🛒 Sélectionner les produits à produire")
-
-        # C. Tableau éditable
+        # Tableau saisie
         df_prods = pd.DataFrame(prods_resp.data)
-        df_prods['Quantité Cible (Cartons)'] = 0 
-        
+        if "Quantité Cible (Cartons)" not in df_prods.columns:
+            df_prods['Quantité Cible (Cartons)'] = 0
+            
         df_editor = df_prods[['id', 'designation', 'poids_fixe_carton', 'Quantité Cible (Cartons)']]
         
+        # On utilise une clé unique basée sur le client pour reset le tableau quand on change
         edited_df = st.data_editor(
             df_editor, 
+            key=f"editor_{choix_client}", 
             column_config={
                 "id": None,
                 "designation": "Article",
-                "poids_fixe_carton": st.column_config.NumberColumn("Poids Carton (kg)", disabled=True),
-                "Quantité Cible (Cartons)": st.column_config.NumberColumn("Quantité à produire", min_value=0, step=1)
+                "poids_fixe_carton": st.column_config.NumberColumn("Poids (kg)", disabled=True),
+                "Quantité Cible (Cartons)": st.column_config.NumberColumn("Qté à faire", min_value=0)
             },
             hide_index=True,
             use_container_width=True,
-            height=400
+            height=300
         )
-
-        total_poids_prevu = (edited_df['poids_fixe_carton'] * edited_df['Quantité Cible (Cartons)']).sum()
-        st.caption(f"Objectif Total estimé : {total_poids_prevu} kg")
-
-        # D. BOUTON DE VALIDATION
-        if st.button("🚀 LANCER LA PRODUCTION", type="primary"):
-            lignes_a_inserer = edited_df[edited_df['Quantité Cible (Cartons)'] > 0]
+        
+        # Bouton Ajouter au Panier
+        if st.button("➕ AJOUTER CETTE COMMANDE AU PLANNING"):
+            lignes_valides = edited_df[edited_df['Quantité Cible (Cartons)'] > 0].copy()
             
-            if lignes_a_inserer.empty:
-                st.error("⚠️ Veuillez mettre une quantité sur au moins un article.")
+            if lignes_valides.empty:
+                st.warning("Veuillez saisir au moins une quantité.")
             else:
-                try:
+                # On ajoute dans la mémoire temporaire
+                commande_temp = {
+                    "client_nom": choix_client,
+                    "client_id": liste_clients[choix_client],
+                    "ref_commande": ref_auto,
+                    "produits": lignes_valides, # On stocke le petit tableau des produits choisis
+                    "poids_total": (lignes_valides['poids_fixe_carton'] * lignes_valides['Quantité Cible (Cartons)']).sum()
+                }
+                st.session_state.panier_production.append(commande_temp)
+                st.success(f"Commande {choix_client} ajoutée à la liste (à droite) !")
+
+# --- COLONNE DROITE : RÉCAPITULATIF ET VALIDATION ---
+with col_review:
+    st.subheader("📋 Récapitulatif de la journée")
+    
+    if not st.session_state.panier_production:
+        st.info("Le planning est vide. Ajoutez des commandes à gauche.")
+    else:
+        # Affichage du panier
+        total_jour_kg = 0
+        
+        for i, item in enumerate(st.session_state.panier_production):
+            total_jour_kg += item['poids_total']
+            with st.expander(f"📍 {item['client_nom']} - {item['poids_total']} kg", expanded=False):
+                st.dataframe(item['produits'][['designation', 'Quantité Cible (Cartons)']], hide_index=True)
+                if st.button(f"🗑️ Supprimer", key=f"del_{i}"):
+                    st.session_state.panier_production.pop(i)
+                    st.rerun()
+
+        st.divider()
+        st.metric("TOTAL JOURNÉE À PRODUIRE", f"{total_jour_kg} kg")
+        
+        col_pdf, col_send = st.columns(2)
+        
+        # BOUTON 1 : PDF
+        pdf_bytes = create_pdf(date_str, st.session_state.panier_production)
+        col_pdf.download_button(
+            label="📄 TÉLÉCHARGER LE PDF",
+            data=pdf_bytes,
+            file_name=f"Planning_Production_{date_str.replace('/','-')}.pdf",
+            mime='application/pdf',
+            type="secondary"
+        )
+        
+        # BOUTON 2 : ENVOI EN PROD
+        if col_send.button("🚀 VALIDER & ENVOYER EN PROD", type="primary"):
+            try:
+                barre = st.progress(0)
+                nb_cmds = len(st.session_state.panier_production)
+                
+                for idx, item in enumerate(st.session_state.panier_production):
+                    # 1. Créer la commande dans Supabase
                     new_cmd = {
-                        "client_id": liste_clients[choix_nom],
-                        "reference_interne": ref_auto, # Utilise la réf avec la date choisie
+                        "client_id": item['client_id'],
+                        "reference_interne": item['ref_commande'],
                         "statut": "EN_COURS",
-                        "objectif_kg": float(total_poids_prevu),
-                        # Optionnel : On pourrait aussi forcer la date 'created_at' si on voulait,
-                        # mais la référence est suffisante pour le suivi visuel.
+                        "objectif_kg": float(item['poids_total'])
+                        # "created_at" sera automatique ou on peut forcer la date_prod
                     }
-                    cmd_result = supabase.table('commandes').insert(new_cmd).execute()
+                    res = supabase.table('commandes').insert(new_cmd).execute()
+                    cmd_id = res.data[0]['id']
                     
-                    if cmd_result.data:
-                        new_cmd_id = cmd_result.data[0]['id']
-                        
-                        lignes_data = []
-                        for index, row in lignes_a_inserer.iterrows():
-                            lignes_data.append({
-                                "commande_id": new_cmd_id,
-                                "produit_id": row['id'],
-                                "quantite_cible_cartons": int(row['Quantité Cible (Cartons)'])
-                            })
-                        
-                        supabase.table('ligne_commandes').insert(lignes_data).execute()
-                        st.success(f"✅ Commande {ref_auto} lancée pour le {date_str} !")
-                        
-                except Exception as e:
-                    st.error(f"Erreur lors de la création : {e}")
+                    # 2. Créer les lignes
+                    lignes_data = []
+                    for _, row in item['produits'].iterrows():
+                        lignes_data.append({
+                            "commande_id": cmd_id,
+                            "produit_id": row['id'],
+                            "quantite_cible_cartons": int(row['Quantité Cible (Cartons)'])
+                        })
+                    supabase.table('ligne_commandes').insert(lignes_data).execute()
+                    
+                    # Update barre progression
+                    barre.progress((idx + 1) / nb_cmds)
+                
+                st.success("✅ TOUTES LES COMMANDES ONT ÉTÉ ENVOYÉES AUX TABLETTES !")
+                st.session_state.panier_production = [] # On vide le panier
+                time.sleep(2)
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Erreur lors de l'envoi : {e}")
+
+# --- BOUTON DE VIDAGE D'URGENCE ---
+st.sidebar.markdown("---")
+if st.sidebar.button("⚠️ Vider tout le panier"):
+    st.session_state.panier_production = []
+    st.rerun()
+

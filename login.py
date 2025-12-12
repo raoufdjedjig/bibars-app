@@ -18,8 +18,8 @@ def login_page():
     st.title("🔒 Connexion Bibars")
     # ... (le reste du code formulaire d'avant) ...
 # --- TES CLÉS ---
-SUPABASE_URL = "TON_URL_SUPABASE_ICI"
-SUPABASE_KEY = "TA_CLE_PUBLIQUE_ANON_ICI"
+SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
 
 def login_page():
     st.title("🔒 Connexion Bibars")
@@ -61,3 +61,4 @@ def login_page():
 
 # On lance la fonction
 login_page()
+

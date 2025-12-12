@@ -24,7 +24,7 @@ def init_connection():
 
 supabase = init_connection()
 
-st.set_page_config(page_title="Smart Factory", page_icon="🏭", layout="wide")
+
 
 # CSS Design
 st.markdown("""
@@ -216,5 +216,6 @@ while True:
         st.error(f"Erreur : {e}")
     
     time.sleep(5)
+
 
 

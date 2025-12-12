@@ -7,7 +7,7 @@ from fpdf import FPDF
 from supabase import create_client
 # ... après les imports ...
 
-st.set_page_config(page_title="Bibars Login", page_icon="🔒", layout="centered")
+st.set_page_config(page_title="The Coop Login", page_icon="🔒", layout="centered")
 
 # --- 1. CONNEXION SUPABASE ---
 try:
@@ -73,6 +73,7 @@ else:
                 
         except Exception as e:
             st.error("Email ou mot de passe incorrect.")
+
 
 
 

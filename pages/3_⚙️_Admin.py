@@ -7,17 +7,7 @@ from fpdf import FPDF
 from supabase import create_client
 # ... autres imports ...
 
-# --- VIGILE SÉCURITÉ ---
-if 'user' not in st.session_state or st.session_state.user is None:
-    st.warning("⛔ Accès refusé. Veuillez aller sur la page '🔑 Connexion' d'abord.")
-    st.stop() # On arrête tout ici
 
-if st.session_state.role != "admin":
-    st.error("⛔ Accès réservé aux administrateurs.")
-    st.stop()
-# -----------------------
-
-# ... Le reste de ton code Admin ...
 # --- TES CLÉS ---
 SUPABASE_URL = "https://ywrdmbqoczqorqeeyzeu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmRtYnFvY3pxb3JxZWV5emV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzYyNzEsImV4cCI6MjA4MTAxMjI3MX0.C7zoaY4iwWTJlqttiYv0M66KLWmpu1_Xn7zl5gWcYKk"
@@ -273,4 +263,5 @@ with tab4:
     all_p = supabase.table('produits').select("*").order('designation').execute().data
     if all_p:
         st.dataframe(pd.DataFrame(all_p)[['designation', 'dun14_carton', 'poids_fixe_carton', 'type_emballage']], use_container_width=True)
+
 
